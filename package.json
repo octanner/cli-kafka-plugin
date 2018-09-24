@@ -1,0 +1,20 @@
+{
+  "name": "akkeris-pg-plugin",
+  "description": "A Akkeris CLI plugin for Kafka",
+  "version": "1.0.0",
+  "author": "Michael Felix",
+  "bugs": {
+    "url": "https://github.com/akkeris/cli-kafka-plugin/issues"
+  },
+  "dependencies": {
+    "pg": "^6.1.0"
+  },
+  "devDependencies": {},
+  "homepage": "https://github.com/akkeris/cli-kafka-plugin",
+  "license": "Apache-2.0",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akkeris/cli-kafka-plugin.git"
+  }
+}
