@@ -63,12 +63,11 @@ function list_clusters(appkit) {
       } 
       else {
         data.sort(sortAlpha).forEach(topic => {
-          //TODO: add schema information
           console.log(appkit.terminal.markdown(`  ***Name: ${topic.name} ***
   ***Created:*** ${(new Date(topic.created)).toLocaleString()}
   ***Cluster:*** ${topic.cluster}
   ***Region:*** ${topic.region}
-  ***Org:*** ${topic.organization}
+  ***Organization:*** ${topic.organization}
   ***Type:*** ${topic.config}
   ***Partitions:*** ${topic.partitions}
   ***Replicas:*** ${topic.replicas}
@@ -77,6 +76,31 @@ function list_clusters(appkit) {
   ${topic.description ? "***Description:*** " + topic.description : ''}
           `));
         });
+      }
+    })
+  }
+  
+  function get_topic(appkit, args) {
+    appkit.api.get(`/clusters/${args.cluster}/topics/${args.topic}`, (err, topic) => {
+      if (err) {
+        return appkit.terminal.error(err);
+      } 
+      else {
+        //TODO: add schema information
+        console.log(appkit.terminal.markdown(`  ***Name: ${topic.name} ***
+  ***Created:*** ${(new Date(topic.created)).toLocaleString()}
+  ***Cluster:*** ${topic.cluster}
+  ***Region:*** ${topic.region}
+  ***Organization:*** ${topic.organization}
+  ***Type:*** ${topic.config}
+  ***Partitions:*** ${topic.partitions}
+  ***Replicas:*** ${topic.replicas}
+  ***Retention time:*** ${topic.retention_ms < 0 ? 'infinite' : (topic.retention_ms * 1000 * 60 * 60 * 24) + ' days'}
+  ***Cleanup policy:*** ${topic.cleanup_policy}
+  ***Key type:*** ${topic.key_mapping}
+  ***Allowed schemas:*** ${topic.schemas}
+  ${topic.description ? "***Description:*** " + topic.description : ''}
+        `));
       }
     })
   }
@@ -108,7 +132,7 @@ function list_clusters(appkit) {
       role: args.role
     };
     
-    let task = appkit.terminal.task(`Subscribing **${payload.app}** to topic **${payload.topic}** as **${payload.role}**.`);
+    let task = appkit.terminal.task(`Subscribing **${payload.app}** to topic **${args.topic}** as **${payload.role}**.`);
     task.start();
     
     appkit.api.post(JSON.stringify(payload), `/clusters/${cluster}/topics/${args.topic}/acls`,  (err) => {
@@ -122,15 +146,15 @@ function list_clusters(appkit) {
   }
   
   function unsubscribe(appkit, args){
-    let payload = {
-      topic: args.topic,
-      app: args.app
-    };
+    let cluster = args.cluster;
+    let topic = args.topic;
+    let app = args.app;
+    let role = args.role;
     
-    let task = appkit.terminal.task(`Unsubscribing **${payload.app}** from topic **${payload.topic}**.`);
+    let task = appkit.terminal.task(`Unsubscribing **${app}** from topic **${topic}**.`);
     task.start();
     
-    appkit.api.delete(JSON.stringify(payload), `/clusters/${cluster}/acls`,  (err) => {
+    appkit.api.delete(`/clusters/${cluster}/topics/${topic}/acls/${app}/role/${role}`,  (err) => {
       if (err) {
         task.end('error');
         return appkit.terminal.error(err);
@@ -155,8 +179,10 @@ function list_clusters(appkit) {
         } 
         else {
           data.sort(sortAlpha).forEach(sub => {
-            console.log(appkit.terminal.markdown(`  ***App: ${sub.app_name} ***
+            console.log(appkit.terminal.markdown(`  ***ID***: ${sub.id}
+  ***App***: ${sub.app_name}-${sub.space_name}
   ***Role:*** ${sub.role}
+  ***Created:*** ${sub.created}
             `));
           });
         }     
@@ -182,23 +208,22 @@ function list_clusters(appkit) {
   function list_schemas(appkit, args){
     let cluster = args.cluster;
 
-    appkit.api.get(`/clusters/${cluster}/schemas`,  (err) => {
+    appkit.api.get(`/clusters/${cluster}/schemas`,  (err, data) => {
       if (err) {
         return appkit.terminal.error(err);
       } 
       else {
         data.sort(sortAlpha).forEach((schema) => {
-          console.log(appkit.terminal.markdown(`  ***Name: ${schema.name} ***
-  ***Latest version:*** ${schema.version}
-          `));
+          console.log(appkit.terminal.markdown(`***${schema} ***`));
         });
       }     
     });
   }
   
-  function add_schema(appkit, args){
+  function add_mapping(appkit, args){
     console.assert((args.key || args.value) && !(args.key && args.value), 'Must specify only one of --key or --value.');
     let topic = args.topic;
+    let cluster = args.cluster;
 
     let payload = {
       topic: args.topic,
@@ -217,6 +242,23 @@ function list_clusters(appkit) {
         task.end('ok');
       }
     });    
+  }
+  
+
+  function list_mappings(appkit, args){
+    let cluster = args.cluster;
+    let topic = args.topic;
+
+    appkit.api.get(`/clusters/${cluster}/topics/${topic}/schemas`,  (err, data) => {
+      if (err) {
+        return appkit.terminal.error(err);
+      } 
+      else {
+        data.sort(sortAlpha).forEach((schema) => {
+          console.log(appkit.terminal.markdown(`***${schema} ***`));
+        });
+      }     
+    });
   }
   
   module.exports = {
@@ -256,30 +298,33 @@ function list_clusters(appkit) {
         string: true,
         demand: true,
         description: 'an existing topic'
-      }, schema = {
+      }, valueschema = {
         alias: 's',
         string: true,
         demand: true,
-        description: 'an existing Avro schema name, or "string" for a string key'
-      }, key = {
+        description: 'an existing Avro schema name'
+      }, keytype = {
         alias: 'k',
+        demand: true,
         boolean: true,
-        description: 'request addition as the key schema'
-      }, value = {
-        alias: 'v',
-        boolean: true,
-        description: 'request addition as a value schema'
+        description: 'the key type ("string", "none", or "avro")'
+      }, keyschema = {
+        alias: 's',
+        string: true,
+        description: 'if the key type is "avro", an existing Avro schema name'
       }
       
       appkit.args.command('kafka:clusters', 'list available Kafka clusters', {}, list_clusters.bind(null, appkit));
       appkit.args.command('kafka:topics', 'list available Kafka topics', {cluster}, list_topics.bind(null, appkit));
+      appkit.args.command('kafka:topics:info', 'show info for a Kafka topic', {cluster, topic}, get_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:types', 'list available Kafka topic configuration types', {cluster}, list_topic_types.bind(null, appkit));
       appkit.args.command('kafka:topics:create NAME', 'create a Kafka topic', {cluster, type, organization, description}, create_topic.bind(null, appkit));
+      appkit.args.command('kafka:topics:assign-key', 'designate the key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_mapping.bind(null, appkit));
+      appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_mapping.bind(null, appkit));
       appkit.args.command('kafka:subscriptions', 'list app/topic subscriptions', {cluster, topic}, list_subscriptions.bind(null, appkit));
       appkit.args.command('kafka:subscribe', 'subscribe an app to a Kafka topic', {cluster, topic, app, role}, subscribe.bind(null, appkit));
-      appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {topic, app}, unsubscribe.bind(null, appkit));
+      appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {cluster, topic, app, role}, unsubscribe.bind(null, appkit));
       appkit.args.command('kafka:schemas', 'list the Avro schemas available in a cluster', {cluster}, list_schemas.bind(null, appkit));
-      appkit.args.command('kafka:schemas:assign', 'add a key or value Avro schema to a topic', {topic, schema, key, value}, add_schema.bind(null, appkit));
     },
     update() {
       // do nothing.
