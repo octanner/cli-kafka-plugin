@@ -220,21 +220,48 @@ function list_clusters(appkit) {
     });
   }
   
-  function add_mapping(appkit, args){
-    console.assert((args.key || args.value) && !(args.key && args.value), 'Must specify only one of --key or --value.');
+  function add_key_schema_mapping(appkit, args){
+    let valid_keytypes = ["none","string","avro"]
+    console.assert(valid_keytypes.includes(args.keytype.toLowerCase()),
+    'keytype must have value "string", "none", or "avro"');
+    if (args.keytype.toLowerCase() == "avro")
+      console.assert((args.schema), 'Must specify schema for keytype avro');
     let topic = args.topic;
     let cluster = args.cluster;
 
     let payload = {
       topic: args.topic,
       schema: args.schema,
-      role: args.key ? 'key' : 'value'
+      keytype: args.keytype
     };
     
-    let task = appkit.terminal.task(`Adding ${payload.role} schema ${payload.schema} to topic ${topic}.`);
+    let task = appkit.terminal.task(`Adding keytype ${payload.keytype}${payload.schema ? " with schema " + payload.schema : ""} to topic ${topic}.`);
     task.start();
     
-    appkit.api.post(JSON.stringify(payload), `/clusters/${cluster}/topics/${topic}/schemas`,  (err) => {
+    appkit.api.post(JSON.stringify(payload), `/clusters/${cluster}/topics/${topic}/key-schema-mapping`,  (err) => {
+      if (err) {
+        task.end('error');
+        return appkit.terminal.error(err);
+      } else {
+        task.end('ok');
+      }
+    });    
+  }
+
+  function add_value_schema_mapping(appkit, args){
+    console.assert((args.schema), 'Must specify schema');
+    let topic = args.topic;
+    let cluster = args.cluster;
+
+    let payload = {
+      topic: args.topic,
+      schema: args.schema
+    };
+    
+    let task = appkit.terminal.task(`Adding schema ${payload.schema} to topic ${topic}.`);
+    task.start();
+    
+    appkit.api.post(JSON.stringify(payload), `/clusters/${cluster}/topics/${topic}/value-schema-mapping`,  (err) => {
       if (err) {
         task.end('error');
         return appkit.terminal.error(err);
@@ -306,12 +333,12 @@ function list_clusters(appkit) {
       }, keytype = {
         alias: 'k',
         demand: true,
-        boolean: true,
+        string: true,
         description: 'the key type ("string", "none", or "avro")'
       }, keyschema = {
         alias: 's',
         string: true,
-        description: 'if the key type is "avro", an existing Avro schema name'
+        description: 'REQUIRED if the key type is "avro", an existing Avro schema name'
       }
       
       appkit.args.command('kafka:clusters', 'list available Kafka clusters', {}, list_clusters.bind(null, appkit));
@@ -319,8 +346,8 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:topics:info', 'show info for a Kafka topic', {cluster, topic}, get_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:types', 'list available Kafka topic configuration types', {cluster}, list_topic_types.bind(null, appkit));
       appkit.args.command('kafka:topics:create NAME', 'create a Kafka topic', {cluster, type, organization, description}, create_topic.bind(null, appkit));
-      appkit.args.command('kafka:topics:assign-key', 'designate the key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_mapping.bind(null, appkit));
-      appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_mapping.bind(null, appkit));
+      appkit.args.command('kafka:topics:assign-key', 'assign key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_key_schema_mapping.bind(null, appkit));
+      appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_value_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:subscriptions', 'list app/topic subscriptions', {cluster, topic}, list_subscriptions.bind(null, appkit));
       appkit.args.command('kafka:subscribe', 'subscribe an app to a Kafka topic', {cluster, topic, app, role}, subscribe.bind(null, appkit));
       appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {cluster, topic, app, role}, unsubscribe.bind(null, appkit));
