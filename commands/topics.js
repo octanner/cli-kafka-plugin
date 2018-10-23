@@ -129,9 +129,9 @@ function list_clusters(appkit) {
     let cluster = args.cluster;
     let payload = {
       app: args.app,
-      role: args.role
+      role: args.role,
+      consumerGroupName: args.consumergroupname
     };
-    
     let task = appkit.terminal.task(`Subscribing **${payload.app}** to topic **${args.topic}** as **${payload.role}**.`);
     task.start();
     
@@ -179,11 +179,12 @@ function list_clusters(appkit) {
         } 
         else {
           data.sort(sortAlpha).forEach(sub => {
-            console.log(appkit.terminal.markdown(`  ***ID***: ${sub.id}
-  ***App***: ${sub.app_name}-${sub.space_name}
-  ***Role:*** ${sub.role}
-  ***Created:*** ${sub.created}
-            `));
+            console.log(appkit.terminal.markdown(`  ***ID:*** ${sub.id}
+  ***App:*** ${sub.app_name}-${sub.space_name}
+  ***Role:*** ${sub.role} `));
+            if(sub.consumerGroupName) console.log(appkit.terminal.markdown(`  ***ConsumerGroupName:*** ${sub.consumerGroupName}`))
+            console.log(appkit.terminal.markdown(`  ***Created:*** ${sub.created}
+            `))
           });
         }     
       });
@@ -315,6 +316,10 @@ function list_clusters(appkit) {
         string: true,
         demand: true,
         description: '"consumer" or "producer"'
+      }, consumergroupname = {
+        alias: 'g',
+        string: true,
+        description: 'Optional consumer group name for consumer role. When not specified random consumer group name will be assigned.'
       }, app = {
         alias: 'a',
         string: true,
@@ -349,7 +354,7 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:topics:assign-key', 'assign key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_key_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_value_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:subscriptions', 'list app/topic subscriptions', {cluster, topic}, list_subscriptions.bind(null, appkit));
-      appkit.args.command('kafka:subscribe', 'subscribe an app to a Kafka topic', {cluster, topic, app, role}, subscribe.bind(null, appkit));
+      appkit.args.command('kafka:subscribe', 'subscribe an app to a Kafka topic', {cluster, topic, app, role, consumergroupname}, subscribe.bind(null, appkit));
       appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {cluster, topic, app, role}, unsubscribe.bind(null, appkit));
       appkit.args.command('kafka:schemas', 'list the Avro schemas available in a cluster', {cluster}, list_schemas.bind(null, appkit));
     },
