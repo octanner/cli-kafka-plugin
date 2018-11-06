@@ -134,7 +134,7 @@ function list_clusters(appkit) {
     };
     let task = appkit.terminal.task(`Subscribing **${payload.app}** to topic **${args.topic}** as **${payload.role}**.`);
     task.start();
-    
+    console.log(payload)
     appkit.api.post(JSON.stringify(payload), `/clusters/${cluster}/topics/${args.topic}/acls`,  (err) => {
       if (err) {
         task.end('error');
@@ -150,18 +150,29 @@ function list_clusters(appkit) {
     let topic = args.topic;
     let app = args.app;
     let role = args.role;
-    
+    let consumergroupname = args.consumergroupname
     let task = appkit.terminal.task(`Unsubscribing **${app}** from topic **${topic}**.`);
     task.start();
-    
-    appkit.api.delete(`/clusters/${cluster}/topics/${topic}/acls/${app}/role/${role}`,  (err) => {
-      if (err) {
-        task.end('error');
-        return appkit.terminal.error(err);
-      } else {
-        task.end('ok');
-      }
-    });
+    if (consumergroupname) {
+      console.log(`Delete URL : /clusters/${cluster}/topics/${topic}/acls/${app}/role/${role}/consumers/${consumergroupname}`)
+      appkit.api.delete(`/clusters/${cluster}/topics/${topic}/acls/${app}/role/${role}/consumers/${consumergroupname}`,  (err) => {
+        if (err) {
+          task.end('error');
+          return appkit.terminal.error(err);
+        } else {
+          task.end('ok');
+        }
+      });
+    } else {
+      appkit.api.delete(`/clusters/${cluster}/topics/${topic}/acls/${app}/role/${role}`,  (err) => {
+        if (err) {
+          task.end('error');
+          return appkit.terminal.error(err);
+        } else {
+          task.end('ok');
+        }
+      });
+    }
   }
   
   function list_subscriptions(appkit, args){
@@ -320,6 +331,10 @@ function list_clusters(appkit) {
         alias: 'g',
         string: true,
         description: 'Optional consumer group name for consumer role. When not specified random consumer group name will be assigned.'
+      }, unsubscribeconsumergroupname = {
+        alias: 'g',
+        string: true,
+        description: 'Optional consumer group name for consumer role. When not specified, and there are multiple consumer subscription for application and topic, randomly one consumer will be unsubscribed'
       }, app = {
         alias: 'a',
         string: true,
@@ -355,7 +370,7 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_value_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:subscriptions', 'list app/topic subscriptions', {cluster, topic}, list_subscriptions.bind(null, appkit));
       appkit.args.command('kafka:subscribe', 'subscribe an app to a Kafka topic', {cluster, topic, app, role, consumergroupname}, subscribe.bind(null, appkit));
-      appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {cluster, topic, app, role}, unsubscribe.bind(null, appkit));
+      appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {cluster, topic, app, role, consumergroupname: unsubscribeconsumergroupname}, unsubscribe.bind(null, appkit));
       appkit.args.command('kafka:schemas', 'list the Avro schemas available in a cluster', {cluster}, list_schemas.bind(null, appkit));
     },
     update() {
