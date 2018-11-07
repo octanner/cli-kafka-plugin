@@ -66,12 +66,12 @@ function list_clusters(appkit) {
           console.log(appkit.terminal.markdown(`  ***Name: ${topic.name} ***
   ***Created:*** ${(new Date(topic.created)).toLocaleString()}
   ***Cluster:*** ${topic.cluster}
-  ***Region:*** ${topic.region}
+  ***Region:*** ${topic.region_name}
   ***Organization:*** ${topic.organization}
   ***Type:*** ${topic.config}
   ***Partitions:*** ${topic.partitions}
   ***Replicas:*** ${topic.replicas}
-  ***Retention time:*** ${topic.retention_ms < 0 ? 'infinite' : (topic.retention_ms * 1000 * 60 * 60 * 24) + ' days'}
+  ***Retention time:*** ${topic.retention_ms < 0 ? 'infinite' : Math.floor(topic.retention_ms / 1000 / 60 / 60 / 24) + ' days'}
   ***Cleanup policy:*** ${topic.cleanup_policy}
   ${topic.description ? "***Description:*** " + topic.description : ''}
           `));
@@ -95,7 +95,7 @@ function list_clusters(appkit) {
   ***Type:*** ${topic.config}
   ***Partitions:*** ${topic.partitions}
   ***Replicas:*** ${topic.replicas}
-  ***Retention time:*** ${topic.retention_ms < 0 ? 'infinite' : (topic.retention_ms * 1000 * 60 * 60 * 24) + ' days'}
+  ***Retention time:*** ${topic.retention_ms < 0 ? 'infinite' : Math.floor(topic.retention_ms / 1000 / 60 / 60 / 24) + ' days'}
   ***Cleanup policy:*** ${topic.cleanup_policy}
   ***Key type:*** ${topic.key_mapping}
   ***Allowed schemas:*** ${topic.schemas}
