@@ -37,7 +37,8 @@ function list_clusters(appkit) {
   }
   
   function list_topic_types(appkit, args) {
-    appkit.api.get(`/clusters/${args.cluster}/configs`, (err, data) => {
+    let cluster_name = args.cluster.toLowerCase()
+    appkit.api.get(`/clusters/${cluster_name}/configs`, (err, data) => {
       if (err) {
         return appkit.terminal.error(err);
       } 
@@ -57,7 +58,8 @@ function list_clusters(appkit) {
   }
   
   function list_topics(appkit, args) {
-    appkit.api.get(`/clusters/${args.cluster}/topics`, (err, data) => {
+    let cluster_name = args.cluster.toLowerCase()
+    appkit.api.get(`/clusters/${cluster_name}/topics`, (err, data) => {
       if (err) {
         return appkit.terminal.error(err);
       } 
@@ -81,7 +83,8 @@ function list_clusters(appkit) {
   }
   
   function get_topic(appkit, args) {
-    appkit.api.get(`/clusters/${args.cluster}/topics/${args.topic}`, (err, topic) => {
+    let cluster_name = args.cluster.toLowerCase()
+    appkit.api.get(`/clusters/${cluster_name}/topics/${args.topic}`, (err, topic) => {
       if (err) {
         return appkit.terminal.error(err);
       } 
@@ -112,7 +115,7 @@ function list_clusters(appkit) {
     let [_, cluster, region] = args.cluster.match(/([^-]+)-([a-z0-9-]+)/);
     let topic = {region: region.toLowerCase(), name:args.NAME.toLowerCase(), config:args.type, organization: args.organization};
     
-    let task = appkit.terminal.task(`Creating **${args.type}** topic **${args.NAME}** in cluster **${args.cluster}**.`);
+    let task = appkit.terminal.task(`Creating **${args.type} topic ${args.NAME} in cluster ${args.cluster}**.`);
     task.start();
     
     appkit.api.post(JSON.stringify(topic), `/clusters/${args.cluster}/topics`, (err) => {
@@ -125,8 +128,28 @@ function list_clusters(appkit) {
     });
   }
   
+  function delete_topic(appkit, args) {
+    console.assert(args.NAME && /^[a-z0-9-]+$/i.test(args.NAME), 'A topic name must only contain lowercase alphanumerics and hyphens.');
+    console.assert(args.cluster && /^[^-]+-[a-z0-9-]+$/i.test(args.cluster), 'A cluster name must only contain lowercase alphanumerics and hyphens.');
+    
+    let [_, cluster, region] = args.cluster.match(/([^-]+)-([a-z0-9-]+)/);
+    
+    let task = appkit.terminal.task(`Deleting ** topic **${args.NAME}** in cluster **${args.cluster}**.`);
+    task.start();
+    
+    appkit.api.delete(`/clusters/${args.cluster}/topics/${args.NAME.toLowerCase()}`, (err) => {
+      if (err) {
+        task.end('error');
+        return appkit.terminal.error(err);
+      } else {
+        task.end('ok');
+      }
+    });
+  }
+  
+
   function subscribe(appkit, args){
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
     let payload = {
       app: args.app,
       role: args.role,
@@ -146,7 +169,7 @@ function list_clusters(appkit) {
   }
   
   function unsubscribe(appkit, args){
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
     let topic = args.topic;
     let app = args.app;
     let role = args.role;
@@ -176,7 +199,7 @@ function list_clusters(appkit) {
   }
   
   function list_subscriptions(appkit, args){
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
     let topic = args.topic;
     let app = args.app;
 
@@ -218,7 +241,7 @@ function list_clusters(appkit) {
   }
 
   function list_schemas(appkit, args){
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
 
     appkit.api.get(`/clusters/${cluster}/schemas`,  (err, data) => {
       if (err) {
@@ -234,12 +257,17 @@ function list_clusters(appkit) {
   
   function add_key_schema_mapping(appkit, args){
     let valid_keytypes = ["none","string","avro"]
-    console.assert(valid_keytypes.includes(args.keytype.toLowerCase()),
-    'keytype must have value "string", "none", or "avro"');
-    if (args.keytype.toLowerCase() == "avro")
-      console.assert((args.schema), 'Must specify schema for keytype avro');
+    let schema = args.schema
+
+    if(!valid_keytypes.includes(args.keytype.toLowerCase())) {
+      return appkit.terminal.error('keytype must have value "string", "none", or "avro"')
+    }
+
+    if (args.keytype.toLowerCase() == "avro" && (typeof(schema) === 'undefined' || schema == ''))
+      return appkit.terminal.error('Must specify schema for keytype avro');
+    
     let topic = args.topic;
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
 
     let payload = {
       topic: args.topic,
@@ -263,7 +291,7 @@ function list_clusters(appkit) {
   function add_value_schema_mapping(appkit, args){
     console.assert((args.schema), 'Must specify schema');
     let topic = args.topic;
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
 
     let payload = {
       topic: args.topic,
@@ -285,7 +313,7 @@ function list_clusters(appkit) {
   
 
   function list_mappings(appkit, args){
-    let cluster = args.cluster;
+    let cluster = args.cluster.toLowerCase();
     let topic = args.topic;
 
     appkit.api.get(`/clusters/${cluster}/topics/${topic}/schemas`,  (err, data) => {
@@ -366,6 +394,7 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:topics:info', 'show info for a Kafka topic', {cluster, topic}, get_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:types', 'list available Kafka topic configuration types', {cluster}, list_topic_types.bind(null, appkit));
       appkit.args.command('kafka:topics:create NAME', 'create a Kafka topic', {cluster, type, organization, description}, create_topic.bind(null, appkit));
+      // appkit.args.command('kafka:topics:delete NAME', 'delete a Kafka topic', {cluster}, delete_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-key', 'assign key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_key_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_value_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:subscriptions', 'list app/topic subscriptions', {cluster, topic}, list_subscriptions.bind(null, appkit));
