@@ -113,7 +113,7 @@ function list_clusters(appkit) {
     console.assert(args.cluster && /^[^-]+-[a-z0-9-]+$/i.test(args.cluster), 'A cluster name must only contain lowercase alphanumerics and hyphens.');
     
     let [_, cluster, region] = args.cluster.match(/([^-]+)-([a-z0-9-]+)/);
-    let topic = {region: region.toLowerCase(), name:args.NAME.toLowerCase(), config:args.type, organization: args.organization};
+    let topic = {region: region.toLowerCase(), name:args.NAME.toLowerCase(), config:args.type, organization: args.organization, partitions: args.numpartitions, retentionms: args.retentionms, description: args.description};
     
     let task = appkit.terminal.task(`Creating **${args.type} topic ${args.NAME} in cluster ${args.cluster}**.`);
     task.start();
@@ -255,6 +255,97 @@ function list_clusters(appkit) {
     });
   }
   
+  function list_consumer_groups(appkit, args){
+    let cluster = args.cluster.toLowerCase();
+
+    appkit.api.get(`/clusters/${cluster}/consumer-groups`,  (err, data) => {
+      if (err) {
+        return appkit.terminal.error(err);
+      } 
+      else {
+        data.sort(sortAlpha).forEach((consumer_group_name) => {
+          console.log(appkit.terminal.markdown(`***${consumer_group_name} ***`));
+        });
+      }     
+    });
+  }
+  
+  function list_consumer_group_offsets(appkit, args){
+    let cluster = args.cluster.toLowerCase();
+    let consumer_group_name = args.consumergroup;
+
+    appkit.api.get(`/clusters/${cluster}/consumer-groups/${consumer_group_name}/offsets`,  (err, data) => {
+      if (err) {
+        return appkit.terminal.error(err);
+      } 
+      else {
+        var key_transform_map = {"topic": "TOPIC", "partition": "PARTITION", "currentOffset": "CURRENT-OFFSET", 
+        "logEndOffset": "LOG-END-OFFSET", "lag": "LAG", "consumerId": "CONSUMER-ID", 
+        "host": "HOST", "clientId": "CLIENT-ID"}
+        printTable(appkit, key_transform_map, data)
+      }     
+    });
+  }
+  
+  function list_consumer_group_members(appkit, args){
+    let cluster = args.cluster.toLowerCase();
+    let consumer_group_name = args.consumergroup;
+
+    appkit.api.get(`/clusters/${cluster}/consumer-groups/${consumer_group_name}/members`,  (err, data) => {
+      if (err) {
+        return appkit.terminal.error(err);
+      } 
+      else {
+        var key_transform_map = {"consumerId": "CONSUMER-ID", 
+        "host": "HOST", "clientId": "CLIENT-ID", "partitions": "#PARTITIONS"}
+        printTable(appkit, key_transform_map, data)
+      }     
+    });
+  }
+
+  function consumer_group_seek(appkit, args) {
+    // cluster, consumergroup, topic, partitions, allpartitions, seektobeginning, seektoend
+    let cluster = args.cluster.toLowerCase();
+    if(!args.partitions && !args.allpartitions) {
+      return appkit.terminal.error('REQUIRED Either partitions or allpartitions argument')
+    } else if(args.partitions && args.allpartitions) {
+      return appkit.terminal.error('Input only one of partitions or allpartitions argument.')
+    } else if(!args.seektobeginning && !args.seektoend) {
+      return appkit.terminal.error('REQUIRED Either seektobeginning or seektoend argument')
+    } else {
+      var payload = {topic: args.topic}
+      args.allpartitions ? payload.allPartitions = true : payload.partitions = args.partitions.split(",").map(Number)
+      payload.seekTo = args.seektobeginning ? 'beginning' : 'end';
+      
+      let task = appkit.terminal.task(`Seeking ConsumerGroup **${args.consumergroup} offset for topic ${args.topic}, partitions ${args.allPartitions ? "allpartitions" : args.partitions} to ${payload.seekTo}**.`);
+      appkit.api.post(JSON.stringify(payload), `/clusters/${cluster}/consumer-groups/${args.consumergroup}/seek`,  (err) => {
+        if (err) {
+          task.end('error');
+          return appkit.terminal.error(err);
+        } else {
+          console.log(`Verify by running "aka kafka:consumer-groups:offsets -c ${cluster} -g ${args.consumergroup}"\nIf the offsets have not reset, Try stopping the consumer and running the seek command again.`)
+          task.end('ok');
+        }
+      });    
+    }
+
+  }
+ 
+  function printTable(appkit, key_transform_map, data) {
+    var transformeddata = []
+    data.forEach((offset) => {
+      var obj = {}
+      Object.keys(key_transform_map).forEach(function(key) {
+        var value = (typeof(offset[key]) === 'undefined') ? "-" : 
+            (typeof(offset[key]) === 'number' ? offset[key].toString() : offset[key])
+        obj[key_transform_map[key]] = value  
+      })
+      transformeddata.push(obj)
+    });
+
+    appkit.terminal.table(transformeddata);
+  }
+
   function add_key_schema_mapping(appkit, args){
     let valid_keytypes = ["none","string","avro"]
     let schema = args.schema
@@ -359,6 +450,11 @@ function list_clusters(appkit) {
         alias: 'g',
         string: true,
         description: 'Optional consumer group name for consumer role. When not specified random consumer group name will be assigned.'
+      }, consumergroup = {
+        alias: 'g',
+        string: true,
+        demand: true,
+        description: 'consumer group name.'
       }, unsubscribeconsumergroupname = {
         alias: 'g',
         string: true,
@@ -373,6 +469,14 @@ function list_clusters(appkit) {
         string: true,
         demand: true,
         description: 'an existing topic'
+      }, numpartitions = {
+        alias: 'p',
+        number: true,
+        description: 'Number of Partitions for creating the topic. Run aka kafka:topics:types for defaults.'
+      }, retentionms = {
+        alias: 'r',
+        number: true,
+        description: 'retention time in ms. Run aka kafka:topics:types for defaults.'
       }, valueschema = {
         alias: 's',
         string: true,
@@ -387,13 +491,30 @@ function list_clusters(appkit) {
         alias: 's',
         string: true,
         description: 'REQUIRED if the key type is "avro", an existing Avro schema name'
+      }, seektobeginning = {
+        boolean: true,
+        default: false,
+        description: 'REQUIRED Either seektobeginning or seektoend, to seek the topic partitions for consumer group to beginning or end'
+      }, seektoend = {
+        boolean: true,
+        default: false,
+        description: 'REQUIRED Either seektobeginning or seektoend, to seek the topic partitions for consumer group to beginning or end'
+      }, partitions = {
+        alias: 'p',
+        string: true,
+        description: 'comma separated list of partition numbers. Eg. "0,1". Either partiotions or allpartitions is REQUIRED to specify the topic partitions for consumer group to seek'
+      }, allpartitions = {
+        alais: 'all',
+        boolean: true,
+        default: false,
+        description: 'select all partitions to seek to beginning or end'
       }
       
       appkit.args.command('kafka:clusters', 'list available Kafka clusters', {}, list_clusters.bind(null, appkit));
       appkit.args.command('kafka:topics', 'list available Kafka topics', {cluster}, list_topics.bind(null, appkit));
       appkit.args.command('kafka:topics:info', 'show info for a Kafka topic', {cluster, topic}, get_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:types', 'list available Kafka topic configuration types', {cluster}, list_topic_types.bind(null, appkit));
-      appkit.args.command('kafka:topics:create NAME', 'create a Kafka topic', {cluster, type, organization, description}, create_topic.bind(null, appkit));
+      appkit.args.command('kafka:topics:create NAME', 'create a Kafka topic', {cluster, type, organization, description, numpartitions, retentionms}, create_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:delete NAME', 'delete a Kafka topic', {cluster}, delete_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-key', 'assign key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_key_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_value_schema_mapping.bind(null, appkit));
@@ -401,6 +522,10 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:subscribe', 'subscribe an app to a Kafka topic', {cluster, topic, app, role, consumergroupname}, subscribe.bind(null, appkit));
       appkit.args.command('kafka:unsubscribe', 'unsubscribe an app from a Kafka topic', {cluster, topic, app, role, consumergroupname: unsubscribeconsumergroupname}, unsubscribe.bind(null, appkit));
       appkit.args.command('kafka:schemas', 'list the Avro schemas available in a cluster', {cluster}, list_schemas.bind(null, appkit));
+      appkit.args.command('kafka:consumer-groups', 'list all the consumer group names in a cluster', {cluster}, list_consumer_groups.bind(null, appkit));
+      appkit.args.command('kafka:consumer-groups:offsets', 'list all the offsets for consumer group in a cluster', {cluster, consumergroup}, list_consumer_group_offsets.bind(null, appkit));
+      appkit.args.command('kafka:consumer-groups:members', 'list all the members for consumer group in a cluster', {cluster, consumergroup}, list_consumer_group_members.bind(null, appkit));
+      appkit.args.command('kafka:consumer-groups:seek', 'seek consumer group in a cluster', {cluster, consumergroup, topic, partitions, allpartitions, seektobeginning, seektoend}, consumer_group_seek.bind(null, appkit));
     },
     update() {
       // do nothing.
