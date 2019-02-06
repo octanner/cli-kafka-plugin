@@ -107,6 +107,81 @@ function list_clusters(appkit) {
       }
     })
   }
+
+  function topic_preview(appkit, args) {
+    let cluster_name = args.cluster.toLowerCase()
+    let topic = args.topic.toLowerCase()
+    appkit.api.get(`/clusters/${cluster_name}/topics/${topic}/preview`, (err, preview) => {
+      if (err) {
+        return appkit.terminal.error(err);
+      } 
+      else {
+        console.log(appkit.terminal.markdown(`\n***End Offsets For Topic ${topic}*** \n`))
+        var key_transform_map = {"topic": "TOPIC", "partition": "PARTITION","offset": "LOG-END-OFFSET"}
+        printTable(appkit, key_transform_map, preview.endOffsets)
+        
+        console.log(appkit.terminal.markdown(`\n***Preview Messages For Topic ${topic}*** \n`))
+        key_transform_map = {"topic": "TOPIC", "partition": "PARTITION","offset": "OFFSET", "schemaName": "SCHEMA", "key": "KEY", "value": "VALUE"}
+        let prettyPreviewMessages = preview.previewMessages.map(message => {
+                                      var value = JSON.stringify(JSON.parse(message.value),null,2); 
+                                      var obj = message
+                                      obj.topic = topic
+                                      obj.value = value
+                                      return obj
+                                    }).sort(function(a, b) { 
+                                      if (a.partition === b.partition) {
+                                        return a.offset - b.offset;
+                                      }
+                                      return a.partition > b.partition ? 1 : -1;
+                                    })
+        printTable(appkit, key_transform_map, prettyPreviewMessages)
+      }
+    })
+  }
+  
+  function recreate_topic(appkit, args) {
+    console.assert(args.NAME && /^[a-z0-9-]+$/i.test(args.NAME), 'A topic name must only contain lowercase alphanumerics and hyphens.');
+    console.assert(args.cluster && /^[^-]+-[a-z0-9-]+$/i.test(args.cluster), 'A cluster name must only contain lowercase alphanumerics and hyphens.');
+    
+    let [_, cluster, region] = args.cluster.match(/([^-]+)-([a-z0-9-]+)/);
+    let topic = {region: region.toLowerCase(), name:args.NAME.toLowerCase(), config:args.type, organization: args.organization, partitions: args.numpartitions, retentionms: args.retentionms, description: args.description};
+    
+    let task = appkit.terminal.task(`Recreating **${args.type} topic ${args.NAME} in cluster ${args.cluster}**.`);
+    task.start();
+    
+    appkit.api.post(JSON.stringify(topic), `/clusters/${args.cluster}/topics/recreate`, (err, topic) => {
+      if (err) {
+        task.end('error');
+        return appkit.terminal.error(err);
+      } else {
+        console.log(appkit.terminal.markdown(`  ***Name: ${topic.name} ***
+  ***Created:*** ${(new Date(topic.created)).toLocaleString()}
+  ***Cluster:*** ${topic.cluster}
+  ***Region:*** ${topic.region}
+  ***Organization:*** ${topic.organization}
+  ***Type:*** ${topic.config}
+  ***Partitions:*** ${topic.partitions}
+  ***Replicas:*** ${topic.replicas}
+  ***Retention time:*** ${topic.retention_ms < 0 ? 'infinite' : Math.floor(topic.retention_ms / 1000 / 60 / 60 / 24) + ' days'}
+  ***Cleanup policy:*** ${topic.cleanup_policy}
+  ***Key type:*** ${topic.key_mapping}
+  ***Allowed schemas:*** ${topic.schemas}
+  ${topic.description ? "***Description:*** " + topic.description : ''}
+  ${topic.subscriptions.length > 0 ? "***Subscriptions:*** " : ''}`));
+        for(var i in topic.subscriptions) {
+          var sub = topic.subscriptions[i]
+          var padding = ' '.repeat(10)
+          console.log(appkit.terminal.markdown(`${padding}***ID:*** ${sub.topic_acl}
+${padding}***App:*** ${sub.app_name}-${sub.space_name}
+${padding}***Role:*** ${sub.role} `));
+            if(sub.consumer_group_name) console.log(appkit.terminal.markdown(`${padding}***ConsumerGroupName:*** ${sub.consumer_group_name}`))
+            console.log(appkit.terminal.markdown(`${padding}***Created:*** ${sub.created}
+            `))
+        }
+        task.end('');
+      }
+    });
+  }
   
   function create_topic(appkit, args) {
     console.assert(args.NAME && /^[a-z0-9-]+$/i.test(args.NAME), 'A topic name must only contain lowercase alphanumerics and hyphens.');
@@ -515,6 +590,7 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:topics:info', 'show info for a Kafka topic', {cluster, topic}, get_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:types', 'list available Kafka topic configuration types', {cluster}, list_topic_types.bind(null, appkit));
       appkit.args.command('kafka:topics:create NAME', 'create a Kafka topic', {cluster, type, organization, description, numpartitions, retentionms}, create_topic.bind(null, appkit));
+      appkit.args.command('kafka:topics:recreate NAME', 'deletes existing kafka topic with messages and acls and recreates topic and acls', {cluster, type, organization, description, numpartitions, retentionms}, recreate_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:delete NAME', 'delete a Kafka topic', {cluster}, delete_topic.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-key', 'assign key type for a topic', {cluster, topic, keytype, schema: keyschema}, add_key_schema_mapping.bind(null, appkit));
       appkit.args.command('kafka:topics:assign-value', 'assign an Avro schema as a valid value type for a topic', {cluster, topic, schema: valueschema}, add_value_schema_mapping.bind(null, appkit));
@@ -526,6 +602,7 @@ function list_clusters(appkit) {
       appkit.args.command('kafka:consumer-groups:offsets', 'list all the offsets for consumer group in a cluster', {cluster, consumergroup}, list_consumer_group_offsets.bind(null, appkit));
       appkit.args.command('kafka:consumer-groups:members', 'list all the members for consumer group in a cluster', {cluster, consumergroup}, list_consumer_group_members.bind(null, appkit));
       appkit.args.command('kafka:consumer-groups:seek', 'seek consumer group in a cluster', {cluster, consumergroup, topic, partitions, allpartitions, seektobeginning, seektoend}, consumer_group_seek.bind(null, appkit));
+      appkit.args.command('kafka:topics:preview', 'Show end offset and latest 2 avro messages of each partion.', {cluster, topic}, topic_preview.bind(null, appkit));
     },
     update() {
       // do nothing.
